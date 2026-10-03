@@ -34,6 +34,7 @@ jobs:
         working-directory: mac-native/dist
         run: |
           lipo winapi-macos -verify_arch arm64 x86_64
+          lipo ../libwinapi_macos.a -verify_arch arm64 x86_64
           shasum -a 256 -c SHA256SUMS
       - name: Test installation and portable build without GUI
         run: python3 mac-native/tools/check_portability.py --no-gui

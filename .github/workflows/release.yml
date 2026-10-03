@@ -52,6 +52,7 @@ jobs:
         working-directory: mac-native/dist
         run: |
           lipo winapi-macos -verify_arch arm64 x86_64
+          lipo ../libwinapi_macos.a -verify_arch arm64 x86_64
           shasum -a 256 -c SHA256SUMS
           python3 -c 'import tarfile; from pathlib import Path; archives = list(Path(".").glob("winapi-macos-*-universal-macos.tar.gz")); assert len(archives) == 1; archive = tarfile.open(archives[0]); assert set(archive.getnames()) == {"winapi-macos", "LICENSE"}, "Release must contain the installer and MIT license"'
       - name: Test installation and portable build without GUI

@@ -5,6 +5,7 @@ import argparse
 import gzip
 import hashlib
 import io
+import os
 import platform
 import re
 import shutil
@@ -16,6 +17,7 @@ from pathlib import Path
 
 FILES = (
     "windows.h",
+    "libwinapi_macos.a",
     "gdi_compat.mm",
     "build.sh",
     "run.sh",
@@ -26,7 +28,31 @@ FILES = (
     "tests/smoke.mm",
 )
 EXECUTABLES = {"build.sh", "run.sh", "run.command"}
-DEFAULT_VERSION = "0.1.0"
+DEFAULT_VERSION = "0.2.0"
+
+
+def build_runtime(module, build, compiler, sdk):
+    """C ABI позволяет линковать готовую Cocoa-реализацию с обычным C++."""
+    libraries = []
+    environment = os.environ.copy()
+    environment["ZERO_AR_DATE"] = "1"
+    for architecture in ("arm64", "x86_64"):
+        object_file = build / f"gdi_compat-{architecture}.o"
+        library = build / f"libwinapi_macos-{architecture}.a"
+        subprocess.run([
+            compiler, "-isysroot", sdk, "-std=c++17", "-stdlib=libc++", "-O2", "-fno-objc-arc",
+            "-Wall", "-Wextra", "-Wno-deprecated-declarations",
+            "-arch", architecture, "-mmacosx-version-min=11.0",
+            "-I", str(module), "-c", str(module / "gdi_compat.mm"), "-o", str(object_file),
+        ], check=True)
+        subprocess.run(["xcrun", "libtool", "-static", "-o", str(library), str(object_file)],
+                       check=True, env=environment)
+        libraries.append(library)
+    runtime = module / "libwinapi_macos.a"
+    subprocess.run(["xcrun", "lipo", "-create", *map(str, libraries), "-output", str(runtime)],
+                   check=True)
+    subprocess.run(["xcrun", "lipo", str(runtime), "-verify_arch", "arm64", "x86_64"],
+                   check=True)
 
 
 def add_release_file(archive, name, data, mode):
@@ -54,9 +80,12 @@ def main():
     output = (args.output_dir or module / "dist").resolve()
     build = module / ".build" / "package"
     files = FILES + (("LICENSE",) if (module / "LICENSE").exists() else ())
-    payload = [(name, (module / name).read_bytes()) for name in files]
     build.mkdir(parents=True, exist_ok=True)
     output.mkdir(parents=True, exist_ok=True)
+    compiler = subprocess.check_output(["xcrun", "--find", "clang++"], text=True).strip()
+    sdk = subprocess.check_output(["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True).strip()
+    build_runtime(module, build, compiler, sdk)
+    payload = [(name, (module / name).read_bytes()) for name in files]
 
     lines = [
         "#pragma once",
@@ -76,8 +105,6 @@ def main():
     lines.extend(["};", "}"])
     (build / "payload.generated.h").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-    compiler = subprocess.check_output(["xcrun", "--find", "clang++"], text=True).strip()
-    sdk = subprocess.check_output(["xcrun", "--sdk", "macosx", "--show-sdk-path"], text=True).strip()
     binary = build / "winapi-macos"
     subprocess.run([
         compiler, "-isysroot", sdk, "-std=c++17", "-O2", "-Wall", "-Wextra",
@@ -114,6 +141,7 @@ def main():
         for path in (installed_binary, archive, release)
     ), encoding="ascii")
     print(f"Установщик (Apple Silicon + Intel), версия {version}: {installed_binary}")
+    print(f"Готовая библиотека для g++/clang++: {module / 'libwinapi_macos.a'}")
     print(f"Архив переносного модуля: {archive}")
     print(f"Архив релиза: {release}")
     print(f"Контрольные суммы SHA-256: {checksums}")

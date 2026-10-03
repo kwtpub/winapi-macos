@@ -2,3 +2,4 @@
 dist/
 .publish/
 *_native
+/libwinapi_macos.a

@@ -15,7 +15,7 @@
 #include <unistd.h>
 
 #ifndef WINAPI_MACOS_VERSION
-#define WINAPI_MACOS_VERSION "0.1.0"
+#define WINAPI_MACOS_VERSION "0.2.0"
 #endif
 
 namespace fs = std::filesystem;
@@ -37,7 +37,10 @@ static void Usage()
                  "  --force     Заменить отличающиеся файлы комплекта.\n"
                  "  --run       После установки собрать и запустить проект.\n"
                  "  --version   Показать версию установщика.\n"
-                 "  --help      Показать эту справку.\n";
+                 "  --help      Показать эту справку.\n\n"
+                 "После установки можно собирать обычным g++:\n"
+                 "  g++ -std=c++17 main.cpp -I mac-native mac-native/libwinapi_macos.a -framework Cocoa -o app\n"
+                 "  ./app\n";
 }
 
 static fs::file_status Status(const fs::path &path)
@@ -199,7 +202,10 @@ int main(int argc, char **argv)
             ::execl("/bin/bash", "bash", "mac-native/run.sh", static_cast<char *>(nullptr));
             throw std::runtime_error("Не удалось запустить /bin/bash: " + std::string(std::strerror(errno)));
         }
-        std::cout << "Для сборки и запуска из папки проекта: ./mac-native/run.sh\n";
+        std::cout << "Из папки проекта можно собрать напрямую (укажите свои исходники):\n"
+                     "  g++ -std=c++17 main.cpp -I mac-native mac-native/libwinapi_macos.a -framework Cocoa -o app\n"
+                     "  ./app\n"
+                     "Или собрать и запустить скриптом: ./mac-native/run.sh\n";
         return 0;
     } catch (const std::exception &error) {
         std::cerr << "Ошибка установки: " << error.what() << '\n';
