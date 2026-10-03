@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      gui_smoke:
+        description: Run Cocoa smoke tests in a graphical macOS session
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Check shell and Python syntax
+        run: |
+          bash -n mac-native/build.sh
+          bash -n mac-native/run.sh
+          bash -n mac-native/run.command
+          python3 -m py_compile mac-native/tools/package.py mac-native/tools/check_portability.py
+      - name: Build universal installer and release archives
+        run: python3 mac-native/tools/package.py
+      - name: Verify architectures and checksums
+        working-directory: mac-native/dist
+        run: |
+          lipo -verify_arch arm64 x86_64 winapi-macos
+          shasum -a 256 -c SHA256SUMS
+      - name: Test installation and portable build without GUI
+        run: python3 mac-native/tools/check_portability.py --no-gui
+      - name: Compile Cocoa smoke tests
+        run: clang++ -std=c++17 -fno-objc-arc mac-native/tests/smoke.mm -framework Cocoa -o /tmp/winapi-macos-smoke
+
+  gui-smoke:
+    if: github.event_name == 'workflow_dispatch' && inputs.gui_smoke
+    needs: portable
+    runs-on: macos-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Compile Cocoa smoke tests
+        run: clang++ -std=c++17 -fno-objc-arc mac-native/tests/smoke.mm -framework Cocoa -o /tmp/winapi-macos-smoke
+      - name: Test drawing, keyboard events and window close
+        run: |
+          /tmp/winapi-macos-smoke
+          /tmp/winapi-macos-smoke --close

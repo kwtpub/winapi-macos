@@ -1,0 +1,64 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to release, matching VERSION
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  GH_REPO: ${{ github.repository }}
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  release:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - name: Preserve an existing release and its assets
+        id: existing
+        run: |
+          if gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json tagName; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Release $RELEASE_TAG already exists; its assets will not be changed."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v7
+        if: steps.existing.outputs.exists != 'true'
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
+      - name: Validate tag against VERSION
+        if: steps.existing.outputs.exists != 'true'
+        run: python3 -c 'import os; from pathlib import Path; expected = "v" + Path("VERSION").read_text().strip(); assert os.environ["RELEASE_TAG"] == expected, "Release tag must match VERSION (" + expected + ")"'
+      - name: Build universal installer and release archives
+        if: steps.existing.outputs.exists != 'true'
+        run: python3 mac-native/tools/package.py
+      - name: Verify architectures, checksums and release contents
+        if: steps.existing.outputs.exists != 'true'
+        working-directory: mac-native/dist
+        run: |
+          lipo -verify_arch arm64 x86_64 winapi-macos
+          shasum -a 256 -c SHA256SUMS
+          python3 -c 'import tarfile; from pathlib import Path; archives = list(Path(".").glob("winapi-macos-*-universal-macos.tar.gz")); assert len(archives) == 1; archive = tarfile.open(archives[0]); assert set(archive.getnames()) == {"winapi-macos", "LICENSE"}, "Release must contain the installer and MIT license"'
+      - name: Test installation and portable build without GUI
+        if: steps.existing.outputs.exists != 'true'
+        run: python3 mac-native/tools/check_portability.py --no-gui
+      - name: Create release without replacing existing assets
+        if: steps.existing.outputs.exists != 'true'
+        run: |
+          version=$(cat VERSION)
+          gh release create "$RELEASE_TAG" mac-native/dist/winapi-macos mac-native/dist/mac-native.zip "mac-native/dist/winapi-macos-${version}-universal-macos.tar.gz" mac-native/dist/SHA256SUMS --repo "$GH_REPO" --verify-tag --title "winapi-macos ${version}" --notes-file CHANGELOG.md

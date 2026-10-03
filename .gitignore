@@ -1,0 +1,10 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+*.o
+*_native
+/winapi-macos
+/dist/
+/mac-native/.build/
+/mac-native/dist/
+/mac-native/.publish/
