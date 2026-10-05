@@ -27,7 +27,7 @@ jobs:
           bash -n mac-native/build.sh
           bash -n mac-native/run.sh
           bash -n mac-native/run.command
-          python3 -m py_compile mac-native/tools/package.py mac-native/tools/check_portability.py
+          python3 -m py_compile mac-native/tools/package.py mac-native/tools/check_portability.py mac-native/tools/check_compiler.py
       - name: Build universal installer and release archives
         run: python3 mac-native/tools/package.py
       - name: Verify architectures and checksums
@@ -38,6 +38,8 @@ jobs:
           shasum -a 256 -c SHA256SUMS
       - name: Test installation and portable build without GUI
         run: python3 mac-native/tools/check_portability.py --no-gui
+      - name: Test plain compiler commands and shell setup
+        run: python3 mac-native/tools/check_compiler.py
       - name: Compile Cocoa smoke tests
         run: clang++ -std=c++17 -fno-objc-arc mac-native/tests/smoke.mm -framework Cocoa -o /tmp/winapi-macos-smoke
 

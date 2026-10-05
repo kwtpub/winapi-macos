@@ -28,7 +28,7 @@ FILES = (
     "tests/smoke.mm",
 )
 EXECUTABLES = {"build.sh", "run.sh", "run.command"}
-DEFAULT_VERSION = "0.2.0"
+DEFAULT_VERSION = "0.3.0"
 
 
 def build_runtime(module, build, compiler, sdk):
@@ -110,7 +110,9 @@ def main():
         compiler, "-isysroot", sdk, "-std=c++17", "-O2", "-Wall", "-Wextra",
         f'-DWINAPI_MACOS_VERSION="{version}"',
         "-arch", "arm64", "-arch", "x86_64", "-mmacosx-version-min=11.0",
-        "-I", str(build), str(module / "tools" / "installer.cpp"), "-o", str(binary),
+        "-I", str(build), str(module / "tools" / "installer.cpp"),
+        str(module / "tools" / "compiler_driver.cpp"),
+        str(module / "tools" / "compiler_setup.cpp"), "-o", str(binary),
     ], check=True)
     installed_binary = output / binary.name
     shutil.copy2(binary, installed_binary)

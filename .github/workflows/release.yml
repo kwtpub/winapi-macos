@@ -58,6 +58,9 @@ jobs:
       - name: Test installation and portable build without GUI
         if: steps.existing.outputs.exists != 'true'
         run: python3 mac-native/tools/check_portability.py --no-gui
+      - name: Test plain compiler commands and shell setup
+        if: steps.existing.outputs.exists != 'true'
+        run: python3 mac-native/tools/check_compiler.py
       - name: Create release without replacing existing assets
         if: steps.existing.outputs.exists != 'true'
         run: |

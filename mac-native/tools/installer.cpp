@@ -1,5 +1,7 @@
 #include <cstddef>
 #include "payload.generated.h"
+#include "compiler_driver.h"
+#include "compiler_setup.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -15,7 +17,7 @@
 #include <unistd.h>
 
 #ifndef WINAPI_MACOS_VERSION
-#define WINAPI_MACOS_VERSION "0.2.0"
+#define WINAPI_MACOS_VERSION "0.3.0"
 #endif
 
 namespace fs = std::filesystem;
@@ -36,11 +38,12 @@ static void Usage()
                  "  --dir ПУТЬ  Установить в указанную папку.\n"
                  "  --force     Заменить отличающиеся файлы комплекта.\n"
                  "  --run       После установки собрать и запустить проект.\n"
+                 "  --setup     Один раз настроить g++/clang++ без флагов библиотеки.\n"
+                 "  --unsetup   Отменить настройку команд компилятора.\n"
                  "  --version   Показать версию установщика.\n"
                  "  --help      Показать эту справку.\n\n"
-                 "После установки можно собирать обычным g++:\n"
-                 "  g++ -std=c++17 main.cpp -I mac-native mac-native/libwinapi_macos.a -framework Cocoa -o app\n"
-                 "  ./app\n";
+                 "Один раз: winapi-macos --setup, затем новая вкладка Terminal.\n"
+                 "В папке практики: winapi-macos, затем g++ *.cpp -o app и ./app.\n";
 }
 
 static fs::file_status Status(const fs::path &path)
@@ -142,14 +145,29 @@ static void Install(const PlannedFile &plan)
 
 int main(int argc, char **argv)
 {
+    if (argc > 1 && std::string(argv[1]) == "--compiler") {
+        if (argc < 4 || std::string(argv[3]) != "--") {
+            std::cerr << "Использование: winapi-macos --compiler g++|clang++ -- аргументы\n";
+            return 2;
+        }
+        try {
+            return RunCompiler(argv[2], std::vector<std::string>(argv + 4, argv + argc));
+        } catch (const std::exception &error) {
+            std::cerr << "Ошибка компилятора: " << error.what() << '\n';
+            return 1;
+        }
+    }
     fs::path requested;
     bool force = false, run = false, help = false, version = false;
+    bool setup = false, unsetup = false;
     for (int i = 1; i < argc; ++i) {
         const std::string option = argv[i];
         if (option == "--help") help = true;
         else if (option == "--version") version = true;
         else if (option == "--force") force = true;
         else if (option == "--run") run = true;
+        else if (option == "--setup") setup = true;
+        else if (option == "--unsetup") unsetup = true;
         else if (option == "--dir") {
             if (i + 1 == argc || std::string(argv[i + 1]).compare(0, 2, "--") == 0 || argv[i + 1][0] == '\0') {
                 std::cerr << "Для --dir нужен путь к папке. Используйте --help для справки.\n";
@@ -165,6 +183,15 @@ int main(int argc, char **argv)
     if (version) { std::cout << "winapi-macos " << WINAPI_MACOS_VERSION << '\n'; return 0; }
 
     try {
+        if (setup || unsetup) {
+            if ((setup && unsetup) || run || force || !requested.empty()) {
+                std::cerr << "Запускайте --setup или --unsetup отдельно от установки проекта.\n";
+                return 2;
+            }
+            if (setup) SetupCompiler();
+            else RemoveCompilerSetup();
+            return 0;
+        }
         const fs::path target = fs::weakly_canonical(fs::absolute(requested.empty() ? fs::current_path() : requested));
         RequireDirectory(target);
         std::vector<PlannedFile> plans;
@@ -202,10 +229,10 @@ int main(int argc, char **argv)
             ::execl("/bin/bash", "bash", "mac-native/run.sh", static_cast<char *>(nullptr));
             throw std::runtime_error("Не удалось запустить /bin/bash: " + std::string(std::strerror(errno)));
         }
-        std::cout << "Из папки проекта можно собрать напрямую (укажите свои исходники):\n"
-                     "  g++ -std=c++17 main.cpp -I mac-native mac-native/libwinapi_macos.a -framework Cocoa -o app\n"
+        std::cout << "После одноразовой настройки winapi-macos --setup и открытия нового Terminal:\n"
+                     "  g++ *.cpp -o app\n"
                      "  ./app\n"
-                     "Или собрать и запустить скриптом: ./mac-native/run.sh\n";
+                     "Сразу собрать и запустить скриптом: ./mac-native/run.sh\n";
         return 0;
     } catch (const std::exception &error) {
         std::cerr << "Ошибка установки: " << error.what() << '\n';
